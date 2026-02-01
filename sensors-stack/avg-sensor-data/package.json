@@ -1,0 +1,11 @@
+{
+    "name": "avg-sensor-data",
+    "version": "1.0.0",
+    "description": "Lambda function to calculate and publish average sensor data",
+    "main": "app.mjs",
+    "author": "Sensor Stack",
+    "license": "MIT",
+    "dependencies": {
+        
+    }
+}

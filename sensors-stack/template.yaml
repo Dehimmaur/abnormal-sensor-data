@@ -1,0 +1,172 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  sensors-stack
+
+  Sensor Data Processing Microservices
+  
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: nodejs22.x
+    Architectures:
+      - x86_64
+
+Parameters:
+  IngestStreamTopicArn:
+    Type: String
+    Description: ARN of the ingest stream SNS topic
+
+Resources:
+  # Lambda Layer for Pino Logger
+  PinoLoggerLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: pino-logger-layer
+      Description: Pino logger configuration layer
+      ContentUri: layers/pino-logger/
+      CompatibleRuntimes:
+        - nodejs22.x
+
+  # SNS Topics for data streams (process streams)
+  LowSensorDataTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: low-sensor-data
+      DisplayName: Low Sensor Data Stream
+
+  HighSensorDataTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: high-sensor-data
+      DisplayName: High Sensor Data Stream
+
+  AvgSensorValuesTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: avg-sensor-values
+      DisplayName: Average Sensor Values Stream
+
+  # Abnormal Sensor Data Lambda Function
+  AbnormalSensorDataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: abnormal-sensor-data
+      CodeUri: abnormal-sensor-data/
+      Handler: app.lambdaHandler
+      Layers:
+        - !Ref PinoLoggerLayer
+      Events:
+        IngestStreamSubscription:
+          Type: SNS
+          Properties:
+            Topic: !Ref IngestStreamTopicArn
+      Environment:
+        Variables:
+          LOW_SENSOR_DATA_TOPIC_ARN: !Ref LowSensorDataTopic
+          HIGH_SENSOR_DATA_TOPIC_ARN: !Ref HighSensorDataTopic
+      Policies:
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt LowSensorDataTopic.TopicName
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt HighSensorDataTopic.TopicName
+
+  # Average Sensor Data Lambda Function
+  AvgSensorDataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: avg-sensor-data
+      CodeUri: avg-sensor-data/
+      Handler: app.lambdaHandler
+      Layers:
+        - !Ref PinoLoggerLayer
+      Events:
+        IngestStreamSubscription:
+          Type: SNS
+          Properties:
+            Topic: !Ref IngestStreamTopicArn
+      Environment:
+        Variables:
+          AVG_SENSOR_VALUES_TOPIC_ARN: !Ref AvgSensorValuesTopic
+      Policies:
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt AvgSensorValuesTopic.TopicName
+
+  # Low Data Processor Lambda Function
+  LowDataProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: low-data-processor
+      CodeUri: low-data-processor/
+      Handler: app.lambdaHandler
+      Layers:
+        - !Ref PinoLoggerLayer
+      Events:
+        LowSensorDataSubscription:
+          Type: SNS
+          Properties:
+            Topic: !Ref LowSensorDataTopic
+
+  # High Data Processor Lambda Function
+  HighDataProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: high-data-processor
+      CodeUri: high-data-processor/
+      Handler: app.lambdaHandler
+      Layers:
+        - !Ref PinoLoggerLayer
+      Events:
+        HighSensorDataSubscription:
+          Type: SNS
+          Properties:
+            Topic: !Ref HighSensorDataTopic
+
+  # Average Data Processor Lambda Function
+  AvgDataProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: avg-data-processor
+      CodeUri: avg-data-processor/
+      Handler: app.lambdaHandler
+      Layers:
+        - !Ref PinoLoggerLayer
+      Events:
+        AvgSensorDataSubscription:
+          Type: SNS
+          Properties:
+            Topic: !Ref AvgSensorValuesTopic
+
+Outputs:
+  LowSensorDataTopicArn:
+    Description: "ARN of Low Sensor Data SNS Topic"
+    Value: !Ref LowSensorDataTopic
+  
+  HighSensorDataTopicArn:
+    Description: "ARN of High Sensor Data SNS Topic"
+    Value: !Ref HighSensorDataTopic
+  
+  AvgSensorValuesTopicArn:
+    Description: "ARN of Average Sensor Values SNS Topic"
+    Value: !Ref AvgSensorValuesTopic
+  
+  AbnormalSensorDataFunctionArn:
+    Description: "ARN of Abnormal Sensor Data Lambda Function"
+    Value: !GetAtt AbnormalSensorDataFunction.Arn
+  
+  AvgSensorDataFunctionArn:
+    Description: "ARN of Average Sensor Data Lambda Function"
+    Value: !GetAtt AvgSensorDataFunction.Arn
+  
+  LowDataProcessorFunctionArn:
+    Description: "ARN of Low Data Processor Lambda Function"
+    Value: !GetAtt LowDataProcessorFunction.Arn
+  
+  HighDataProcessorFunctionArn:
+    Description: "ARN of High Data Processor Lambda Function"
+    Value: !GetAtt HighDataProcessorFunction.Arn
+  
+  AvgDataProcessorFunctionArn:
+    Description: "ARN of Average Data Processor Lambda Function"
+    Value: !GetAtt AvgDataProcessorFunction.Arn

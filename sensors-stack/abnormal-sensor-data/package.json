@@ -1,0 +1,11 @@
+{
+    "name": "abnormal-sensor-data",
+    "version": "1.0.0",
+    "description": "Lambda function to identify abnormal sensor data and publish to processing streams",
+    "main": "app.mjs",
+    "author": "Sensor Stack",
+    "license": "MIT",
+    "dependencies": {
+       
+    }
+}

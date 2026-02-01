@@ -1,0 +1,11 @@
+{
+    "name": "avg-data-processor",
+    "version": "1.0.0",
+    "description": "Lambda function to process average sensor data values",
+    "main": "app.mjs",
+    "author": "Sensor Stack",
+    "license": "MIT",
+    "dependencies": {
+        
+    }
+}
