@@ -3,7 +3,7 @@
 version = 0.1
 
 [default.global.parameters]
-stack_name = "sensors-stack"
+stack_name = "abnormal-values-stack"
 
 [default.build.parameters]
 cached = true

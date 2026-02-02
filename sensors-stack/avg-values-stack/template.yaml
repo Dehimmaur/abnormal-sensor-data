@@ -1,0 +1,90 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  avg-values-stack
+
+  Average Sensor Data Processing Microservices
+  
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: nodejs22.x
+    Layers:
+      - !Ref PinoLoggerLayer
+    Architectures:
+      - x86_64
+    Environment:
+        Variables:
+          LOGGER_LEVEL: DEBUG
+          TZ: Asia/Jerusalem
+Parameters:
+  IngestStreamTopicArn:
+    Type: String
+    Description: ARN of the ingest stream SNS topic
+
+Resources:
+  # Lambda Layer for Pino Logger
+  PinoLoggerLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: pino-logger-layer-average
+      Description: Pino logger configuration layer
+      ContentUri: layers/pino-logger/
+      CompatibleRuntimes:
+        - nodejs22.x
+
+  # SNS Topics for data streams (process streams)
+  AvgSensorValuesTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: avg-sensor-values
+      DisplayName: Average Sensor Values Stream
+
+  # Average Sensor Data Lambda Function
+  AvgSensorDataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: avg-sensor-data
+      CodeUri: avg-sensor-data/
+      Handler: app.lambdaHandler
+      
+      Events:
+        IngestStreamSubscription:
+          Type: SNS
+          Properties:
+            Topic: !Ref IngestStreamTopicArn
+      Environment:
+        Variables:
+          AVG_SENSOR_VALUES_TOPIC_ARN: !Ref AvgSensorValuesTopic
+          REDUCING_SIZE: 5
+      Policies:
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt AvgSensorValuesTopic.TopicName
+
+  # Average Data Processor Lambda Function
+  AvgDataProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: avg-data-processor
+      CodeUri: avg-data-processor/
+      Handler: app.lambdaHandler
+      
+      Events:
+        AvgSensorDataSubscription:
+          Type: SNS
+          Properties:
+            Topic: !Ref AvgSensorValuesTopic
+
+Outputs:
+  AvgSensorValuesTopicArn:
+    Description: "ARN of Average Sensor Values SNS Topic"
+    Value: !Ref AvgSensorValuesTopic
+  
+  AvgSensorDataFunctionArn:
+    Description: "ARN of Average Sensor Data Lambda Function"
+    Value: !GetAtt AvgSensorDataFunction.Arn
+  
+  AvgDataProcessorFunctionArn:
+    Description: "ARN of Average Data Processor Lambda Function"
+    Value: !GetAtt AvgDataProcessorFunction.Arn
