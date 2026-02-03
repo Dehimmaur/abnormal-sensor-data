@@ -10,6 +10,10 @@ Globals:
   Function:
     Timeout: 30
     Runtime: nodejs22.x
+    Environment:
+        Variables:
+          LOGGER_LEVEL: debug
+          TZ: Asia/Jerusalem
     Layers:
       - !Ref PinoLoggerLayer
     Architectures:
