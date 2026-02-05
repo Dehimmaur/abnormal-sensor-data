@@ -65,11 +65,22 @@ Resources:
         Variables:
           LOW_SENSOR_DATA_TOPIC_ARN: !Ref LowSensorDataTopic
           HIGH_SENSOR_DATA_TOPIC_ARN: !Ref HighSensorDataTopic
+          SENSOR_DATA_PROVIDER_FUNCTION_NAME: !Ref SensorDataProviderFunction
       Policies:
         - SNSPublishMessagePolicy:
             TopicName: !GetAtt LowSensorDataTopic.TopicName
         - SNSPublishMessagePolicy:
             TopicName: !GetAtt HighSensorDataTopic.TopicName
+        - LambdaInvokePolicy:
+            FunctionName: !Ref SensorDataProviderFunction
+
+  # Sensor Data Provider Lambda Function
+  SensorDataProviderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: sensor-data-provider
+      CodeUri: sensor-data-provider/
+      Handler: app.handler
 
   # Low Data Processor Lambda Function
   LowDataProcessorFunction:
@@ -117,3 +128,7 @@ Outputs:
   HighDataProcessorFunctionArn:
     Description: "ARN of High Data Processor Lambda Function"
     Value: !GetAtt HighDataProcessorFunction.Arn
+
+  SensorDataProviderFunctionArn:
+    Description: "ARN of Sensor Data Provider Lambda Function"
+    Value: !GetAtt SensorDataProviderFunction.Arn
