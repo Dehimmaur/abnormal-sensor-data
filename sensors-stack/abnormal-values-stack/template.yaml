@@ -1,19 +1,16 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  abnormal-values-stack
-
   Abnormal Sensor Data Processing Microservices
-  
-# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+
 Globals:
   Function:
     Timeout: 30
     Runtime: nodejs22.x
     Environment:
-        Variables:
-          LOGGER_LEVEL: debug
-          TZ: Asia/Jerusalem
+      Variables:
+        LOGGER_LEVEL: debug
+        TZ: Asia/Jerusalem
     Layers:
       - !Ref PinoLoggerLayer
     Architectures:
@@ -23,33 +20,48 @@ Parameters:
   IngestStreamTopicArn:
     Type: String
     Description: ARN of the ingest stream SNS topic
-    Default: arn:aws:sns:us-east-1:212712010886:sensors-data-ingest
 
 Resources:
-  # Lambda Layer for Pino Logger
+  # DynamoDB Table
+  SensorsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: SensorsNormalValues
+      AttributeDefinitions:
+        - AttributeName: sensorId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: N
+      KeySchema:
+        - AttributeName: sensorId
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+
+  # Pino Logger Layer
   PinoLoggerLayer:
     Type: AWS::Serverless::LayerVersion
     Properties:
-      LayerName: pino-logger-layer-abnormal
-      Description: Pino logger configuration layer
+      LayerName: pino-logger-layer
       ContentUri: ../layers/pino-logger/
       CompatibleRuntimes:
         - nodejs22.x
 
-  # SNS Topics for data streams (process streams)
+  # SNS Topics
   LowSensorDataTopic:
     Type: AWS::SNS::Topic
-    Properties:
-      TopicName: low-sensor-data
-      DisplayName: Low Sensor Data Stream
-
   HighSensorDataTopic:
     Type: AWS::SNS::Topic
-    Properties:
-      TopicName: high-sensor-data
-      DisplayName: High Sensor Data Stream
 
-  # Abnormal Sensor Data Lambda Function
+  # Lambda Functions
+  SensorDataProviderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: sensor-data-provider
+      CodeUri: sensor-data-provider/
+      Handler: app.handler
+
   AbnormalSensorDataFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -66,6 +78,7 @@ Resources:
           LOW_SENSOR_DATA_TOPIC_ARN: !Ref LowSensorDataTopic
           HIGH_SENSOR_DATA_TOPIC_ARN: !Ref HighSensorDataTopic
           SENSOR_DATA_PROVIDER_FUNCTION_NAME: !Ref SensorDataProviderFunction
+          STALE_TIME: "30"
       Policies:
         - SNSPublishMessagePolicy:
             TopicName: !GetAtt LowSensorDataTopic.TopicName
@@ -74,15 +87,6 @@ Resources:
         - LambdaInvokePolicy:
             FunctionName: !Ref SensorDataProviderFunction
 
-  # Sensor Data Provider Lambda Function
-  SensorDataProviderFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: sensor-data-provider
-      CodeUri: sensor-data-provider/
-      Handler: app.handler
-
-  # Low Data Processor Lambda Function
   LowDataProcessorFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -94,8 +98,13 @@ Resources:
           Type: SNS
           Properties:
             Topic: !Ref LowSensorDataTopic
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref SensorsTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SensorsTable
 
-  # High Data Processor Lambda Function
   HighDataProcessorFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -107,28 +116,25 @@ Resources:
           Type: SNS
           Properties:
             Topic: !Ref HighSensorDataTopic
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref SensorsTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SensorsTable
 
 Outputs:
   LowSensorDataTopicArn:
-    Description: "ARN of Low Sensor Data SNS Topic"
     Value: !Ref LowSensorDataTopic
-  
   HighSensorDataTopicArn:
-    Description: "ARN of High Sensor Data SNS Topic"
     Value: !Ref HighSensorDataTopic
-  
+  SensorsTableName:
+    Value: !Ref SensorsTable
   AbnormalSensorDataFunctionArn:
-    Description: "ARN of Abnormal Sensor Data Lambda Function"
     Value: !GetAtt AbnormalSensorDataFunction.Arn
-  
   LowDataProcessorFunctionArn:
-    Description: "ARN of Low Data Processor Lambda Function"
     Value: !GetAtt LowDataProcessorFunction.Arn
-  
   HighDataProcessorFunctionArn:
-    Description: "ARN of High Data Processor Lambda Function"
     Value: !GetAtt HighDataProcessorFunction.Arn
-
   SensorDataProviderFunctionArn:
-    Description: "ARN of Sensor Data Provider Lambda Function"
     Value: !GetAtt SensorDataProviderFunction.Arn

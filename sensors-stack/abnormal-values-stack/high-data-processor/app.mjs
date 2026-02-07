@@ -1,55 +1,33 @@
-/**
- * Average Data Processor Handler
- * Subscribes to avg-sensor-data stream and processes averaged sensor values
- *
- * Event doc: https://docs.aws.amazon.com/lambda/latest/dg/invocation_tolerable_failure_rates.html
- * @param {Object} event - SNS Event
- * @param {Object} context - Lambda Context
- */
-
+import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
 import logger from "/opt/nodejs/index.mjs";
 
-
-/**
- * @param {Object} messageDict
- * @param {string} tzName
- */
-function processMessage(messageDict, tzName) {
-  const { sensorId, value, timestamp, maxValue } = messageDict;
-
-  const date = new Date(timestamp); 
-
-  const dt = new Intl.DateTimeFormat("en-GB", {
-    timeZone: tzName,
-    dateStyle: "full",
-    timeStyle: "long",
-  }).format(date);
-
-  console.log(
-    `sensorId = ${sensorId}\n` +
-    `value = ${value}\n` +
-     `maximal value ${maxValue}\n` +
-    `date-time = ${dt}`
-  );
-}
-
-function processRecord(record, tzName) {
-  const message = record.Sns.Message;
-  logger.debug(`message from SNS record is ${message}`);
-
-  const messageDict = JSON.parse(message);
-  processMessage(messageDict, tzName);
-}
+const db = new DynamoDBClient({});
 
 export const lambdaHandler = async (event) => {
-  try {
-    const tzName = process.env.TZ || "Asia/Jerusalem";
+  const tableName = process.env.TABLE_NAME;
+  logger.debug({ tableName, event }, "HighDataProcessor received event");
 
-    for (const record of event.Records) {
-      processRecord(record, tzName);
+  for (const record of event.Records) {
+    try {
+      const data = JSON.parse(record.Sns.Message);
+
+      if (!data.sensorId || data.value === undefined) {
+        logger.error({ data }, "Invalid record, skipping");
+        continue;
+      }
+
+      const item = {
+        sensorId: { S: data.sensorId },
+        timestamp: { N: String(data.timestamp || Date.now()) },
+        status: { S: 'HIGH_PROCESSED' },
+        value: { N: String(data.value) },
+        maxValue: { N: String(data.maxValue || 0) }
+      };
+
+      await db.send(new PutItemCommand({ TableName: tableName, Item: item }));
+      logger.info({ item }, "Inserted HIGH value into DynamoDB");
+    } catch (err) {
+      logger.error(err, "Error processing HIGH sensor record");
     }
-  } catch (e) {
-    logger.error(`Error: ${e.message}`);
-    throw e;
   }
 };

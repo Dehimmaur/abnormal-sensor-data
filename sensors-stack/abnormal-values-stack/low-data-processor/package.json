@@ -5,6 +5,7 @@
     "main": "app.mjs",
     "author": "Sensor Stack",
     "license": "MIT",
+    "type": "module",
     "dependencies": {
         
     }
