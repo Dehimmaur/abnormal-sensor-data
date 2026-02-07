@@ -1,8 +1,3 @@
-/**
- * Abnormal Sensor Data Handler
- * Subscribes to ingest stream and publishes to low-sensor-data and high-sensor-data streams
- */
-
 import logger from "/opt/nodejs/index.mjs";
 import { publish } from "/opt/nodejs/publisher.mjs";
 import { InvokeCommand, LambdaClient } from "@aws-sdk/client-lambda";
@@ -13,7 +8,7 @@ const ENV_LAMBDA = "SENSOR_DATA_PROVIDER_FUNCTION_NAME";
 const ENV_STALE_TIME = "STALE_TIME"; // в секундах
 
 // Кеш с меткой времени для устаревания
-const SENSORS_NORMAL_VALUES = {};
+const SENSORS_CACHE = {};
 
 const lambdaClient = new LambdaClient({});
 
@@ -21,19 +16,22 @@ const lambdaClient = new LambdaClient({});
 function isStale(timestamp) {
   const staleTime = process.env[ENV_STALE_TIME];
   if (!staleTime) return false;
-  return (Date.now() - timestamp) / 1000 > Number(staleTime);
+  const stale = (Date.now() - timestamp) / 1000 > Number(staleTime);
+  if (stale) logger.debug(`CACHE EXPIRED: timestamp=${timestamp} older than STALE_TIME=${staleTime}s`);
+  return stale;
 }
 
-/** Получение значений из кеша или Lambda provider */
-async function getSensorValues(sensorId, functionName) {
-  if (SENSORS_NORMAL_VALUES[sensorId] && !isStale(SENSORS_NORMAL_VALUES[sensorId].timestamp)) {
-    return SENSORS_NORMAL_VALUES[sensorId].values;
+/** Получение значений сенсора с кешем */
+async function getSensorValues(sensorId, providerFunction) {
+  if (SENSORS_CACHE[sensorId] && !isStale(SENSORS_CACHE[sensorId].timestamp)) {
+    logger.debug(`[CACHE HIT] Using cached values for sensor ${sensorId}:`, SENSORS_CACHE[sensorId].values);
+    return SENSORS_CACHE[sensorId].values;
   }
 
-  logger.debug(`Cache miss or stale for sensor ${sensorId}, invoking provider Lambda ${functionName}`);
-
+  logger.debug(`[CACHE MISS] No cached values or cache stale for sensor ${sensorId}. Calling provider Lambda ${providerFunction}`);
+  
   const command = new InvokeCommand({
-    FunctionName: functionName,
+    FunctionName: providerFunction,
     InvocationType: "RequestResponse",
     Payload: Buffer.from(JSON.stringify({ sensorId }))
   });
@@ -42,12 +40,9 @@ async function getSensorValues(sensorId, functionName) {
   const payload = JSON.parse(Buffer.from(response.Payload).toString("utf-8"));
 
   const values = payload.values || [0, 0];
-  SENSORS_NORMAL_VALUES[sensorId] = {
-    values,
-    timestamp: Date.now()
-  };
+  SENSORS_CACHE[sensorId] = { values, timestamp: Date.now() };
 
-  logger.debug(`Cached values for sensor ${sensorId}: ${values}`);
+  logger.debug(`[CACHE UPDATE] Cached new values for sensor ${sensorId}:`, values);
   return values;
 }
 
@@ -67,8 +62,10 @@ async function processRecord(record, topicArnLow, topicArnHigh, providerFunction
   logger.debug({ sensorId, value, minValue, maxValue }, "Processing sensor data");
 
   if (value < minValue) {
+    logger.info(`[LOW] sensorId=${sensorId} value=${value} < minValue=${minValue}`);
     await publish({ sensorId, value, minValue, timestamp: timestamp || Date.now() }, topicArnLow);
   } else if (value > maxValue) {
+    logger.info(`[HIGH] sensorId=${sensorId} value=${value} > maxValue=${maxValue}`);
     await publish({ sensorId, value, maxValue, timestamp: timestamp || Date.now() }, topicArnHigh);
   } else {
     logger.debug({ sensorId, value }, "Value within normal range, skipping");
